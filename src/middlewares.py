@@ -11,8 +11,8 @@ class LoggingMiddleware(BaseMiddleware[Message]):
         logger.info(
             "Incoming message: user_id=%s, peer_id=%s, text='%s'",
             self.event.from_id,
-            self.event.text,
             self.event.peer_id,
+            self.event.text,
         )
 
     async def post(self):
