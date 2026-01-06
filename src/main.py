@@ -3,28 +3,25 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-# from vkbottle import Keyboard, Text
-from vkbottle.bot import Bot, Message
+from src.handlers import labeler as handlers_labeler
+from vkbottle.bot import Bot
 
 from src.config import settings
 from src.logconfig import configurate_logging, get_logger
 from src.middlewares import LoggingMiddleware
 
-bot = Bot(token=settings.vk_api_key)
-bot.labeler.message_view.register_middleware(LoggingMiddleware)
-
+# Настройка логирования
 configurate_logging()
 logger = get_logger("main")
 
+# Инициализация бота
+bot = Bot(token=settings.vk_api_key)
 
-@bot.on.message(text="/start")
-async def start_handler(message: Message):
-    await message.answer("Привет! Я эхо-бот. Напиши мне что-нибудь!")
+# Регистрация middleware
+bot.labeler.message_view.register_middleware(LoggingMiddleware)
 
-
-@bot.on.message()
-async def echo_handler(message: Message):
-    await message.answer(f"Эхо: {message.text}")
+# Подключение labeler с обработчиками
+bot.labeler.load(handlers_labeler)
 
 
 if __name__ == "__main__":

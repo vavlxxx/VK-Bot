@@ -31,6 +31,16 @@
             "level": "DEBUG",
             "propagate": false
         },
+        "handlers": {
+            "handlers": ["stdout","main_file"],
+            "level": "DEBUG",
+            "propagate": false
+        },
+        "ai_service":{
+            "handlers": ["stdout","main_file"],
+            "level": "DEBUG",
+            "propagate": false
+        },
         "vkbottle": {
             "handlers": ["stdout","main_file"],
             "level": "DEBUG",
