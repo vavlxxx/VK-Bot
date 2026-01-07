@@ -9,7 +9,9 @@ readme = "README.md"
 requires-python = ">=3.13,<4.0"
 dependencies = [
     "vkbottle (>=4.6.2,<5.0.0)",
-    "pydantic-settings (>=2.12.0,<3.0.0)"
+    "pydantic-settings (>=2.12.0,<3.0.0)",
+    "aiosqlite (>=0.22.1,<0.23.0)",
+    "openai (>=2.14.0,<3.0.0)"
 ]
 
 

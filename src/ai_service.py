@@ -1,9 +1,8 @@
-from typing import Dict, List
-
 from openai import AsyncOpenAI
 
 from src.config import settings
 from src.logconfig import get_logger
+from src.database import db
 
 logger = get_logger("ai_service")
 
@@ -14,49 +13,82 @@ class AIService:
             api_key=settings.openai_api_key,
             base_url=settings.openai_api_url,
         )
-        # Хранилище истории разговоров: {user_id: [messages]}
-        self.conversations: Dict[int, List[Dict[str, str]]] = {}
 
-    async def get_ai_response(self, user_id: int, user_message: str) -> str:
-        """Получить ответ от AI с учетом контекста беседы"""
+    async def get_ai_response(self, user_id: int, chat_id: int, user_message: str, photo_url: str = None) -> str:
+        """Получить ответ от AI с учетом контекста беседы из БД"""
         try:
-            # Получаем или создаем историю беседы для пользователя
-            if user_id not in self.conversations:
-                self.conversations[user_id] = [
-                    {
-                        "role": "system",
-                        "content": "Ты полезный AI-помощник в ВКонтакте. Отвечай дружелюбно и по делу.",
-                    }
-                ]
+            # Сохраняем сообщение пользователя
+            # Если есть фото, добавляем пометку в текст для истории
+            stored_message = user_message
+            if photo_url:
+                stored_message = f"{user_message} (Attached Image: {photo_url})"
+            
+            await db.add_message(chat_id, "user", stored_message)
+            
+            # Получаем историю сообщений для контекста
+            # Ограничиваем контекст последними 20 сообщениями
+            history = await db.get_chat_messages(chat_id, limit=20)
+            
+            # Формируем контент текущего сообщения
+            current_content = [{"type": "text", "text": user_message}]
+            if photo_url:
+                current_content.append({
+                    "type": "image_url",
+                    "image_url": {"url": photo_url}
+                })
+            
+            # Собираем сообщения для API: system + history + current
+            # Важно: историю передаем как есть (text), а текущее сообщение как object (text + image)
+            # Но history мы уже взяли из БД, где лежит stored_message.
+            # API OpenAI не любит, когда последнее сообщение дублируется, если мы его уже добавили в историю?
+            # Нет, мы обычно отправляем user message в messages.
+            # В моем коде выше: await db.add_message(...) -> history = await db.get_chat_messages(...)
+            # То есть history УЖЕ содержит текущее сообщение (stored_message).
+            # Проблема: в БД оно лежит как строка string, а нам нужно отправить его как vision-структуру.
+            
+            # Решение: Берем history[:-1] (все кроме последнего), и добавляем последнее в нужном формате.
+            
+            messages_payload = [
+                {
+                    "role": "system",
+                    "content": "Ты полезный AI-помощник в ВКонтакте. Отвечай дружелюбно и по делу.",
+                }
+            ]
+            
+            if history:
+                # Все старые сообщения
+                messages_payload.extend(history[:-1])
+                
+                # Последнее сообщение (текущее) формируем правильно
+                messages_payload.append({
+                    "role": "user",
+                    "content": current_content
+                })
+            else:
+                 # Если истории нет (странно, так как мы только что добавили), то просто текущее
+                messages_payload.append({
+                    "role": "user",
+                    "content": current_content
+                })
 
-            # Добавляем сообщение пользователя в историю
-            self.conversations[user_id].append(
-                {"role": "user", "content": user_message}
-            )
-
-            logger.debug(f"Отправка запроса к AI для пользователя {user_id}")
+            logger.debug(f"Отправка запроса к AI для пользователя {user_id} (чат {chat_id}, фото: {bool(photo_url)})")
 
             # Отправляем запрос с полной историей
             response = await self.client.chat.completions.create(
                 model=settings.ai_model,
-                messages=self.conversations[user_id],
+                messages=messages_payload,
                 max_tokens=1000,
                 temperature=0.7,
             )
 
             ai_message = response.choices[0].message.content
 
-            # Добавляем ответ AI в историю
-            self.conversations[user_id].append(
-                {"role": "assistant", "content": ai_message}
-            )
-
-            # Ограничиваем историю (например, последние 20 сообщений)
-            if len(self.conversations[user_id]) > 20:
-                # Оставляем системное сообщение и последние 19
-                self.conversations[user_id] = [
-                    self.conversations[user_id][0]
-                ] + self.conversations[user_id][-19:]
+            # Сохраняем ответ AI
+            await db.add_message(chat_id, "assistant", ai_message)
+            
+            # Если это первое сообщение в чате (история была пустой до этого запроса, сейчас там user + system),
+            # можно обновить заголовок чата, но для простоты оставим "New Chat" или обновим позже.
+            # Здесь мы просто возвращаем ответ.
 
             logger.info(f"Успешный ответ AI для пользователя {user_id}")
             return ai_message
@@ -64,12 +96,6 @@ class AIService:
         except Exception as e:
             logger.error(f"Ошибка при запросе к AI: {e}")
             return "Извините, произошла ошибка при обработке вашего запроса. Попробуйте позже."
-
-    def clear_conversation(self, user_id: int) -> None:
-        """Очистить историю беседы пользователя"""
-        if user_id in self.conversations:
-            del self.conversations[user_id]
-            logger.info(f"История беседы очищена для пользователя {user_id}")
 
 
 # Singleton экземпляр

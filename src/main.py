@@ -26,4 +26,15 @@ bot.labeler.load(handlers_labeler)
 
 if __name__ == "__main__":
     logger.info("Bot has been started...")
+    # Инициализация БД
+    import asyncio
+    from src.database import db
+    
+    # We need to run async init. Bot.run_forever() manages loop, 
+    # but we need DB ready before requests. 
+    # vkbottle manages its own loop. Let's make a wrapper.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    loop.run_until_complete(db.init_db())
     bot.run_forever()
